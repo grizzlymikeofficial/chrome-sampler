@@ -39,9 +39,17 @@ never get silently violated, no matter which task you're on.
 
 - **Extension:** TypeScript, Manifest V3, Web Audio API for capture
 - **Backend:** TBD — language/framework not yet decided
-- **Database:** vector-graph store — vendor TBD (Qdrant/Weaviate + graph
-  layer vs. Neo4j with vector index). See open decisions in
-  `docs/prd-overview.md`. Don't pick this unilaterally — surface it.
+- **Database:** started with **Qdrant** for local dev (see
+  `infra/docker-compose.yml`) — vectors only, with the Sample -> Stem
+  relationship modeled as a `parent_sample_id` payload field rather than a
+  real graph edge. **This is a starting point to get the ball rolling, not
+  a finalized decision.** The schema's graph needs are currently thin
+  (one-level parent/child, no multi-hop traversal), which is why Qdrant
+  alone is enough for now. If you're building a feature that would genuinely
+  benefit from real graph traversal, don't just work around it — flag it
+  in the open-decisions list in `docs/prd-overview.md` and in your STATUS.md
+  entry. Neo4j with a vector index is the likely fallback if that need
+  materializes.
 - **Copyright Tier 3 vendor:** TBD, budget-dependent
 - **LLM provider/model for Tier 4 + tagging disambiguation + naming:** TBD
 

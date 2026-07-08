@@ -70,7 +70,18 @@ Aggregate pattern agent -> STATUS.md / architecture-notes.md -> dev agents
 
 ## Open decisions to make before agents start writing code
 
-- [ ] Vector-graph DB choice (Qdrant/Weaviate + lightweight graph layer, vs. Neo4j with vector index)
+- [x] **Vector-graph DB — started with Qdrant, not yet finalized.** The
+      current schema's only relationship (Sample -> Stem) is one level deep
+      and doesn't need real graph traversal, so we're prototyping against
+      Qdrant alone (see `infra/docker-compose.yml`), modeling the Sample ->
+      Stem edge as a `parent_sample_id` payload field rather than a true
+      graph edge. **This is a starting point to get local dev moving, not a
+      final architecture decision.** Revisit if/when multi-hop graph queries
+      become genuinely necessary (e.g. cross-referencing samples derived
+      from the same original source) — at that point, Neo4j with a vector
+      index is the likely alternative. Agents should not treat this as
+      settled; flag it again in a task spec if a feature you're building
+      would benefit from real graph traversal.
 - [ ] Commercial fingerprinting API vendor for Tier 3 (budget-dependent)
 - [ ] Which LLM model/tier to call for Tier 4 copyright and tagging disambiguation (cost vs. reasoning quality tradeoff)
 - [ ] Legal review of capture behavior against target platforms' ToS — flagged in earlier discussion, not resolved here
