@@ -1,6 +1,12 @@
-node_modules/, 
-.env*, 
-*.wav, 
-*.mp3, 
-dist/, 
+node_modules/
+.env*
+*.wav
+*.mp3
+dist/
+uploads/
 .DS_Store
+
+# Commercial golden-dataset sample pack for local tagging-pipeline
+# validation only — not ours to redistribute, and too large for git
+# regardless (see STATUS.md, 2026-07-14 entry).
+data/

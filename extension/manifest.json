@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Sample Lib Capture (dev prototype)",
+  "version": "0.0.1",
+  "description": "Local research prototype only — not for public distribution. Captures browser audio into a free sample via a local stub backend.",
+  "permissions": ["activeTab", "tabCapture"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/content-script.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

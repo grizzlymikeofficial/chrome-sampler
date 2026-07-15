@@ -21,14 +21,24 @@ classifier already did better and cheaper?"
 
 ## Touchpoint 2 — Tagging disambiguation (user-facing, low friction)
 
-- Triggers when the algorithmic tagger's confidence is below 70% (e.g.
-  competing BPM candidates in a ratio consistent with a polyrhythmic feel, or
-  a key signature that doesn't cleanly fit Western 12-tone profiles).
-- The LLM is given the algorithm's structured output (candidate values +
-  confidence split), not raw audio, and asked to phrase a single inline
-  question.
+- Triggers when any audio-ML tag field's confidence is below the LLM-as-judge
+  threshold (0.7) — this now spans BPM, Key, Genre, and Mood, not just
+  BPM/Key as originally scoped. Example triggers: competing BPM candidates in
+  a ratio consistent with a polyrhythmic feel, a key signature that doesn't
+  cleanly fit Western 12-tone profiles, or a Genre/Mood classifier split
+  roughly evenly across two labels.
+- The LLM-as-judge is given each field's structured output — concretely,
+  `Tags.raw_model_outputs` for that field (`prd-database-schema.md`), the
+  actual candidate values + confidences already computed, not raw audio —
+  and asked to phrase a single inline question from them. Its job is
+  judging/framing, never re-perceiving the audio itself
+  (`prd-backend-pipeline.md` section 3). The prompt's options *are* those
+  stored candidates (e.g. the two choices in the mood example below are
+  CLAP's top-2 matches) — this data gets persisted now instead of computed
+  and discarded after rendering the prompt.
 - UI: one tap/short answer, written straight to the sample's tag fields.
-  Example: *"Sounds like 3/4 at 144 or half-time at 96 — which fits?"*
+  Examples: *"Sounds like 3/4 at 144 or half-time at 96 — which fits?"* /
+  *"Leaning moody trap or dark ambient — which is closer?"*
 - Logged to `tags.disambiguation_agent_output` and the producer's answer,
   for later review of whether the framing is actually helping.
 
@@ -77,6 +87,74 @@ would actually type into a search bar."
   this resembles something else" signal for the producer's own awareness,
   not a copyright determination (that's Tier 4's job, and only Tier 4 blocks).
 
+## Touchpoint 6 — Tag correction & preference feedback loop (the tag-side counterpart to touchpoint 4)
+
+Mirrors touchpoint 4's design exactly, for tags instead of names: whenever a
+producer overrides any tag field — whether or not touchpoint 2 was triggered
+for it — log the full tuple, not just the final value:
+
+```json
+{
+  "sample_id": "...",
+  "field": "mood",
+  "ml_model_tag": "moody",
+  "ml_model_confidence": 0.61,
+  "llm_judge_decision": "route_to_producer",
+  "producer_final_tag": "dark ambient",
+  "producer_comment": "moody undersells how sparse this is",
+  "timestamp": "..."
+}
+```
+
+This is what the aggregate pattern agent mines to find systemic tagging
+mismatches (e.g. "the Mood model keeps saying 'moody' for what producers
+consistently correct to 'dark ambient'") and turn into a proposed
+LLM-judge-prompt revision — written to `architecture-notes.md`, same as
+touchpoint 4. **Resolved (see `prd-overview.md` and `prd-backend-pipeline.md`
+section 3):** this proposal-mining loop is what "trains the system on
+tag-preference" mechanically means — it can't mean model
+fine-tuning/personalization, since every tagging model in the pipeline
+(librosa, aubio, essentia, PANNs/YAMNet, musicnn, CLAP) is a static
+pretrained artifact this project doesn't own or train. What actually
+improves is the judge's own prompt.
+
+## Touchpoint 7 — Stem extraction prompt & decision logging (user-facing + tuning data)
+
+- Runs right after tagging completes (multi-label `categories` output is
+  available — see `prd-backend-pipeline.md` section 3).
+- If the multi-instrument flag fires (≥2 stem-relevant buckets — vocals/
+  drums/bass/other — cross the section-4 threshold, currently a
+  maintainer-flagged-as-tunable 0.5, not the 0.7 tagging threshold), show an
+  inline suggestion: *"Multiple instruments detected — would you like to
+  extract stems?"*
+- **The "Extract Stems" button is always present regardless of the flag** —
+  this is a deliberate change from an earlier version of this pipeline that
+  gated the button behind the flag entirely. Extraction is now a producer
+  judgment call the system can suggest but never withholds.
+- Log every decision, not just the flagged-and-accepted case, so the
+  threshold can actually be tuned later against real behavior instead of
+  guessed at:
+
+```json
+{
+  "sample_id": "...",
+  "multi_instrument_flag": true,
+  "detected_buckets": ["vocals", "drums"],
+  "bucket_confidences": { "vocals": 0.9, "drums": 0.9, "bass": 0.1, "other": 0.2 },
+  "producer_action": "accepted" ,
+  "timestamp": "..."
+}
+```
+  `producer_action` is one of `accepted` (flag fired, producer extracted),
+  `declined` (flag fired, producer didn't), or `manual_unflagged` (flag
+  didn't fire, producer extracted anyway). All three are equally useful
+  signal: a lot of `declined` says the 0.5 threshold is too loose; a lot of
+  `manual_unflagged` says it's too strict.
+- This is exactly the data the maintainer plans to use for the "come back
+  and fine-tune once it's working" pass on the 0.5/≥2-bucket defaults in
+  `prd-backend-pipeline.md` section 4 — logging it from day one means that
+  pass has real data to work from instead of starting cold.
+
 ---
 
 ## The feedback loop (touchpoints -> dev agents)
@@ -85,7 +163,7 @@ would actually type into a search bar."
 Production pipeline output
         |
         v
-Quality rating / Naming feedback / Usage-match flag  (touchpoints 1,3,5 style logging)
+Quality rating / Naming feedback / Tag correction / Usage-match flag / Stem-extraction decision  (touchpoints 1,3,5,6,7 style logging)
         |
         v
 Aggregate pattern agent (periodic, not per-file)
@@ -102,7 +180,8 @@ Dev agents (architect + implementer)
 ```
 
 The aggregate pattern agent's job, concretely, each run:
-1. Read new HITLEvent rows and naming-feedback tuples since its last run
+1. Read new HITLEvent rows and naming-feedback / tag-correction tuples since
+   its last run
 2. Read recent STATUS.md entries for any related dev-side context (e.g. a
    recent Tier 3 API change that might explain a spike in Tier 4 volume)
 3. Write a dated entry to `architecture-notes.md`: what pattern it found,
